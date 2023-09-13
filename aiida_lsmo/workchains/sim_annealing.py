@@ -3,7 +3,9 @@
 
 import os
 import functools
+import numpy
 import ase
+from scipy.spatial.transform import Rotation
 from aiida.plugins import CalculationFactory, DataFactory, WorkflowFactory
 from aiida.orm import Dict, Str
 from aiida.engine import calcfunction
@@ -23,6 +25,126 @@ FFBuilder = CalculationFactory('lsmo.ff_builder')  # pylint: disable=invalid-nam
 # import aiida data
 CifData = DataFactory('core.cif')  # pylint: disable=invalid-name
 
+def angle_between(A, B, C):
+    BA = A - B
+    BC = C - B
+    cosine_angle = numpy.dot(BA, BC) / (numpy.linalg.norm(BA) * numpy.linalg.norm(BC))
+    angle = numpy.arccos(cosine_angle)
+    return numpy.degrees(angle)
+
+def reconstruct_molecule(symbols_ff, symbols, positions):
+
+    if 'CH2_ethene' in symbols_ff:
+
+        p1 = [float(coord) for coord in positions[0]]
+        p2 = [float(coord) for coord in positions[1]]
+
+        # Find the center and axis
+        center = (numpy.array(p1) + numpy.array(p2)) / 2
+        axis = numpy.array(p1) - numpy.array(p2)
+        axis /= numpy.linalg.norm(axis)
+
+        intercarbon_distance = 1.335 # Angstrom
+        carbon_hydrogen_distance = 1.093 # Angstrom
+        hydrogen_cc_bond_angle = 121.728 / 180 * numpy.pi # The pie is a lie
+
+        carbon_positions = [
+            center + intercarbon_distance * axis / 2, 
+            center - intercarbon_distance * axis / 2
+        ]
+        # For the hydrogen, find the parallel and perpendicular distances
+        para_dist = numpy.cos(numpy.pi - hydrogen_cc_bond_angle) * carbon_hydrogen_distance
+        perp_dist = numpy.sin(numpy.pi - hydrogen_cc_bond_angle) * carbon_hydrogen_distance
+
+        # Find a normalised perpendicular vector to the C-C axis 
+        cross_vector = numpy.array([axis[1], axis[0], 0])  # This should be guaranteed to be non-parallel
+        perp_axis = numpy.cross(axis, cross_vector)
+        perp_axis /= numpy.linalg.norm(perp_axis)
+
+        hydrogen_positions = [
+            center + intercarbon_distance * axis / 2 + para_dist * axis + perp_dist * perp_axis,
+            center + intercarbon_distance * axis / 2 + para_dist * axis - perp_dist * perp_axis,
+            center - intercarbon_distance * axis / 2 - para_dist * axis + perp_dist * perp_axis,
+            center - intercarbon_distance * axis / 2 - para_dist * axis - perp_dist * perp_axis,
+        ]
+        symbols = ['C'] * len(carbon_positions)
+        symbols.extend(['H'] * len(hydrogen_positions))
+
+        return symbols, carbon_positions + hydrogen_positions
+
+    if 'CH3_ethane' in symbols_ff:
+        p1 = numpy.array([float(coord) for coord in positions[0]])
+        p2 = numpy.array([float(coord) for coord in positions[1]])        
+        
+        # Find the center and axis
+        center = (p1 + p2) / 2
+        axis = p2 - p1
+        axis /= numpy.linalg.norm(axis)
+
+        intercarbon_distance = 1.532 # Angstrom
+        carbon_hydrogen_distance = 1.101 # Angstrom
+        h_c_c_angle = 111.39
+        h_c_h_angle = 107.48
+
+        # Calculate the positions of the C atoms in both CH3 groups
+        C1_position = center - (intercarbon_distance / 2) * axis
+        C2_position = center + (intercarbon_distance / 2) * axis
+
+        # Start with one H atom placed along a chosen axis, here we choose the x-axis
+        H_relative = numpy.array([carbon_hydrogen_distance, 0, 0])
+
+        # Calculate the necessary rotation angles in radians
+        theta_h_c_c = numpy.radians(180 - h_c_c_angle)
+        theta_h_c_h = numpy.radians(h_c_h_angle)
+
+        # Find a normalised perpendicular vector to the C-C axis 
+        cross_vector = numpy.array([axis[1], axis[0], 0])  # This should be guaranteed to be non-parallel
+        perp_axis = numpy.cross(axis, cross_vector)
+        perp_axis /= numpy.linalg.norm(perp_axis)
+
+        # Generate the rotation matrices needed to create the CH3 group geometry
+        rotation_to_axis = Rotation.from_rotvec(axis * theta_h_c_c)
+        rotation_around_axis = Rotation.from_rotvec(axis * (2 * numpy.pi / 3))
+
+        # Apply the rotation around a perpendicular vector before applying the H-C-C angle adjustment
+        rotation_180 = Rotation.from_rotvec(perp_axis * numpy.pi)
+
+        # Find the positions of the first H atoms in the first CH3 group
+        H1_relative = rotation_to_axis.apply(H_relative)
+
+        # check if rotation is correct
+        theta1 = angle_between(H1_relative+C1_position, C1_position, C2_position)
+        if theta1 < 90.0:   # correct rotation
+            H1_relative = rotation_180.apply(H_relative)
+            H1_relative = rotation_to_axis.apply(H1_relative)
+
+        H2_relative = rotation_around_axis.apply(H1_relative)
+        H3_relative = rotation_around_axis.apply(H2_relative)
+
+        CH3_1 = numpy.vstack([C1_position, C1_position + H1_relative, C1_position + H2_relative, C1_position + H3_relative])
+
+        # Find the positions of the first H atoms in the second CH3 group, rotate 180° around a perpendicular axis first
+        H1_relative = rotation_180.apply(H_relative)
+        H1_relative = rotation_to_axis.apply(H1_relative)
+
+        theta2 = angle_between(H1_relative+C2_position, C2_position, C1_position)
+        if theta2 < 90:
+            H1_relative = rotation_to_axis.apply(H_relative)
+
+        H2_relative = rotation_around_axis.apply(H1_relative)
+        H3_relative = rotation_around_axis.apply(H2_relative)
+        CH3_2 = numpy.vstack([C2_position, C2_position + H1_relative, C2_position + H2_relative, C2_position + H3_relative])
+
+        # Concatenate to get the coordinates of all atoms
+        atom_positions = numpy.vstack([CH3_1, CH3_2])
+
+        # Define the symbols for the atoms in the ethane molecule
+        symbols = ['C', 'H', 'H', 'H', 'C', 'H', 'H', 'H']
+
+        return symbols, atom_positions      
+
+    return symbols, positions
+
 
 # calcfunctions (in order of appearence)
 @calcfunction
@@ -36,25 +158,30 @@ def get_molecule_from_restart_file(structure_cif, molecule_folderdata, input_dic
 
     # Get the atom types of the molecule (ASE accepts only atomic eilements as "symbols")
     ff_data_molecule = load_yaml()[molecule_dict['name']][molecule_dict['forcefield']]
-    symbolsff = [x[0] for x in ff_data_molecule['atomic_positions']]
+    symbols_ff = [x[0] for x in ff_data_molecule['atomic_positions']]
 
-    symbolsff *= number_of_molecules
-    chem = [ff_data_molecule['atom_types'][atom]['pseudo_atom'][2] for atom in symbolsff]
+    symbols_ff *= number_of_molecules
+    chem = [ff_data_molecule['atom_types'][atom]['pseudo_atom'][2] for atom in symbols_ff]
 
     # Get the coordinates of the molecule from restart-file in the extended unit cell
     fobj = molecule_folderdata.get_object_content(
         os.path.join('Restart', 'System_0',
                      molecule_folderdata.list_object_names(os.path.join('Restart', 'System_0'))[0]))  # pylint: disable=protected-access
+
     lines_positions = [line.split()[3:6] for line in fobj.splitlines() if 'Adsorbate-atom-position:' in line]
     symbols_positions = list(zip(chem, lines_positions))
-    symbols_positions = [(name, position) for name, position in symbols_positions if name != 'M'
-                        ]  # Removing dummy atoms.
+    symbols_positions = [
+        (name, position) for name, position in symbols_positions if name != 'M'  # Removing dummy atoms.
+    ] 
     symbols, positions = list(zip(*symbols_positions))
+
+    symbols, positions = reconstruct_molecule(symbols_ff, symbols, positions)
 
     # Get the cell, combine the ASE object and return the CifData
     cell = structure_cif.get_ase().get_cell()
     molecule_ase = ase.Atoms(symbols=symbols, cell=cell, positions=positions, pbc=True)
     molecule_ase.wrap()  # wrap molecule in the unit cell
+
     return CifData(ase=molecule_ase)
 
 

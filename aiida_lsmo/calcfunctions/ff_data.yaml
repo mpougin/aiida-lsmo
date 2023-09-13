@@ -675,7 +675,7 @@ C2H4:
     tc: 282.34
     pc: 5041000
     af: 0.086
-  TraPPE:
+  TraPPE_UA:
     description: |
       TraPPE united atom (UA) parameterization for ethene, aka ethylene (10.1021/jp001044x).
       Note that this FF is not charged, and thus does not not capture the mild negative charge of the C=C bond.
@@ -686,23 +686,50 @@ C2H4:
     atomic_positions:
     - [CH2_ethene, 0, 0, +0.665]
     - [CH2_ethene, 0, 0, -0.665]
+  TraPPE_UA2:
+    description: |
+      Improved TraPPE united atom (UA2) parameterization for ethylene (10.1002/aic).
+      Note that this FF is charged to capture the mild negative charge of the C=C bond.
+    atom_types:
+      CH2_ethene:
+        force_field: [lennard-jones, 99.8, 3.575]
+        pseudo_atom: [yes, C, C, 0, 14.02, 0.32, 0.0, 1.0, 1.00, 0, 0, relative, 0]
+      M_ethene:
+        force_field: [none]
+        pseudo_atom: [no, M, M, 0, 0, -0.32, 0.0, 1.0, 1.00, 0, 0, relative, 0]
+    atomic_positions:
+    - [CH2_ethene, 0, 0, +0.85]
+    - [CH2_ethene, 0, 0, -0.85]
+    - [M_ethene, 0, +0.65, 0]
+    - [M_ethene, 0, -0.65, 0]
 
 C2H6:
   critical_constants:
     tc: 305.32
     pc: 4872000
     af: 0.100
-  TraPPE:
+  TraPPE_UA:
     description: |
       TraPPE united atom (UA) parameterization for ethane (10.1021/jp001044x).
       Note that also EH version is reported.
     atom_types:
-      CH2_ethane:
+      CH3_ethane:
         force_field: [lennard-jones, 98.0, 3.75]
         pseudo_atom: [yes, C, C, 0, 13.03, 0.0, 0.0, 1.0, 1.00, 0, 0, relative, 0]
     atomic_positions:
-    - [CH2_ethane, 0, 0, +0.77]
-    - [CH2_ethane, 0, 0, -0.77]
+    - [CH3_ethane, 0, 0, +0.77]
+    - [CH3_ethane, 0, 0, -0.77]
+  TraPPE_UA2:
+    description: |
+      Improved TraPPE united atom (UA2) parameterization for ethane (10.1002/aic).
+      Parameters revised to reproduce ethane/ethylene system
+    atom_types:
+      CH3_ethane:
+        force_field: [lennard-jones, 134.5, 3.52]
+        pseudo_atom: [yes, C, C, 0, 13.03, 0.0, 0.0, 1.0, 1.00, 0, 0, relative, 0]
+    atomic_positions:
+    - [CH3_ethane, 0, 0, +1.15]
+    - [CH3_ethane, 0, 0, -1.15]
 
 CO2:
   critical_constants:
