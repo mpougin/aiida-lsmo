@@ -86,6 +86,13 @@ class Cp2kBindingEnergyWorkChain(WorkChain):
             valid_type=Dict,
             required=False,
             help='Specify custom CP2K settings to overwrite the input dictionary just before submitting the CalcJob')
+        spec.input(
+            'bsse_resources',
+            valid_type=dict,
+            required=False,
+            help='Overrides for the resources used for the BSSE calculation. This is useful as using too many MPI ranks in parallel causes the calculation.',
+            non_db=True
+        )
 
         # Workchain outline
         spec.outline(
@@ -255,6 +262,7 @@ class Cp2kBindingEnergyWorkChain(WorkChain):
         self.ctx.base_inp['metadata'].update({'label': 'bsse', 'call_link_label': 'run_bsse'})
         self.ctx.base_inp['cp2k']['metadata'].update({'label': 'BSSE'})
         self.ctx.base_inp['cp2k']['metadata']['options']['parser_name'] = 'lsmo.cp2k_bsse_parser'
+        self.ctx.base_inp['cp2k']['metadata']['options']['resources'] = self.inputs.bsse_resources
         running_base = self.submit(Cp2kBaseWorkChain, **self.ctx.base_inp)
         self.report('Run BSSE calculation to compute corrected binding energy.')
 
